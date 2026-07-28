@@ -5,10 +5,9 @@ const taskSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: String,
   priority: { type: String, enum: ['high', 'medium', 'low'], default: 'medium' },
-  estimatedDuration: Number, // in minutes
-  dueDate: Date,
-  isCompleted: { type: Boolean, default: false },
-  timeSlot: { start: Date, end: Date }
+  duration: { type: Number, default: 30 },
+  status: { type: String, enum: ['pending', 'in-progress', 'completed'], default: 'pending' },
+  scheduledTime: Date
 }, { timestamps: true });
 
 module.exports = mongoose.model('Task', taskSchema);

@@ -1,20 +1,41 @@
 const { ChatOpenAI } = require('@langchain/openai');
-const { createOpenAIFunctionsAgent, AgentExecutor } = require('langchain/agents');
-const { ChatPromptTemplate } = require('@langchain/core/prompts');
+const { DynamicStructuredTool } = require('@langchain/core/tools');
+const { z } = require('zod'); 
+const Task = require('../models/Task');
 
-const model = new ChatOpenAI({ modelName: 'gpt-4o-mini', temperature: 0.2 });
+const model = new ChatOpenAI({
+  modelName: 'gpt-4o-mini',
+  temperature: 0.3,
+  openAIApiKey: process.env.OPENAI_API_KEY,
+});
 
-const prompt = ChatPromptTemplate.fromMessages([
-  ['system', 'You are an AI Daily Planner Agent. You manage schedules, prioritize tasks based on deadlines and time slots, and execute workflow updates.'],
-  ['human', '{input}']
-]);
+// Tool for the Agent to fetch user tasks
+const getTasksTool = new DynamicStructuredTool({
+  name: 'getTasks',
+  description: 'Fetches all tasks for a given user',
+  schema: z.object({
+    userId: z.string().describe('The ID of the user'),
+  }),
+  func: async ({ userId }) => {
+    const tasks = await Task.find({ userId });
+    return JSON.stringify(tasks);
+  },
+});
 
-// Initialize and execute agent with custom function tools (e.g. createTask, rescheduleTasks)
-async function runPlannerAgent(userInput) {
-  const tools = []; // Add function tools here for DB operations
-  const agent = await createOpenAIFunctionsAgent({ llm: model, tools, prompt });
-  const executor = new AgentExecutor({ agent, tools });
-  return await executor.invoke({ input: userInput });
-}
+// Tool for the Agent to auto-create a task
+const createTaskTool = new DynamicStructuredTool({
+  name: 'createTask',
+  description: 'Creates a new task in the planner',
+  schema: z.object({
+    userId: z.string(),
+    title: z.string(),
+    duration: z.number().optional(),
+    priority: z.enum(['high', 'medium', 'low']).optional(),
+  }),
+  func: async (taskData) => {
+    const newTask = await Task.create(taskData);
+    return JSON.stringify(newTask);
+  },
+});
 
-module.exports = { runPlannerAgent };
+module.exports = { model, getTasksTool, createTaskTool };
