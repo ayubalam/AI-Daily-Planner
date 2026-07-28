@@ -1,18 +1,22 @@
-const { ChatOpenAI } = require('@langchain/openai');
-const { DynamicStructuredTool } = require('@langchain/core/tools');
-const { z } = require('zod'); 
-const Task = require('../models/Task');
+import dotenv from 'dotenv';
+dotenv.config();
 
-const model = new ChatOpenAI({
-  modelName: 'gpt-4o-mini',
+import { ChatGroq } from '@langchain/groq';
+import { DynamicStructuredTool } from '@langchain/core/tools';
+import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { z } from 'zod';
+import Task from '../models/Task.js';
+
+export const model = new ChatGroq({
+  model: 'llama-3.3-70b-versatile',
+  modelName: 'llama-3.3-70b-versatile',
   temperature: 0.3,
-  openAIApiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.GROQ_API_KEY,
 });
 
-// Tool for the Agent to fetch user tasks
-const getTasksTool = new DynamicStructuredTool({
+export const getTasksTool = new DynamicStructuredTool({
   name: 'getTasks',
-  description: 'Fetches all tasks for a given user',
+  description: 'Fetches all tasks for a specific user ID from the database',
   schema: z.object({
     userId: z.string().describe('The ID of the user'),
   }),
@@ -22,10 +26,9 @@ const getTasksTool = new DynamicStructuredTool({
   },
 });
 
-// Tool for the Agent to auto-create a task
-const createTaskTool = new DynamicStructuredTool({
+export const createTaskTool = new DynamicStructuredTool({
   name: 'createTask',
-  description: 'Creates a new task in the planner',
+  description: 'Creates a new task in the database for the user',
   schema: z.object({
     userId: z.string(),
     title: z.string(),
@@ -38,4 +41,20 @@ const createTaskTool = new DynamicStructuredTool({
   },
 });
 
-module.exports = { model, getTasksTool, createTaskTool };
+const tools = [getTasksTool, createTaskTool];
+
+const systemPrompt = `You are an AI Daily Planner.
+Always respond ONLY in valid JSON with no extra conversational text or markdown code blocks.
+Expected output format:
+{
+  "summary": "Brief summary of the plan",
+  "schedule": [
+    { "time": "09:00 AM - 09:30 AM", "task": "Task Name", "priority": "high|medium|low" }
+  ]
+}`;
+
+export const agentExecutor = createReactAgent({
+  llm: model,
+  tools,
+  stateModifier: systemPrompt,
+});
