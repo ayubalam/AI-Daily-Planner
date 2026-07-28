@@ -1,8 +1,8 @@
 import express from 'express';
-import { generatePlan } from '../controllers/agentController.js';
+import { parseAndCreateTask } from '../controllers/agentController.js';
 
 const router = express.Router();
 
-router.post('/plan', generatePlan);
+router.post('/parse', parseAndCreateTask);
 
 export default router;

@@ -14,14 +14,10 @@ interface TaskItem {
 }
 
 interface ScheduleItem {
-  time: string;
-  task: string;
-  priority?: string;
-}
-
-interface PlanData {
-  summary: string;
-  schedule: ScheduleItem[];
+  id: string;
+  timeSlot: string;
+  title: string;
+  priority: string;
 }
 
 interface UserSession {
@@ -82,12 +78,15 @@ export default function App() {
   const [authUsername, setAuthUsername] = useState('');
   const [authError, setAuthError] = useState('');
 
-  const [prompt, setPrompt] = useState('');
+  const [topPrompt, setTopPrompt] = useState('');
+  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [plan, setPlan] = useState<PlanData | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [taskTitle, setTaskTitle] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
+
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -112,6 +111,46 @@ export default function App() {
       fetchTasks(user.id);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleAuraPrompt = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!aiPrompt.trim() || !user) return;
+    setIsAiLoading(true);
+    try {
+      await axios.post(`${API_BASE}/agent/parse`, { prompt: aiPrompt, userId: user.id });
+      setAiPrompt('');
+      fetchTasks(user.id);
+    } catch (err) {
+      console.error('Error running Aura prompt:', err);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleGeneratePlan = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    if (!topPrompt.trim() || !user) return;
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}/agent/parse`, {
+        prompt: topPrompt,
+        userId: user.id,
+      });
+
+      if (res.data.scheduleItem) {
+        setScheduleItems((prev) => [...prev, res.data.scheduleItem]);
+      }
+
+      setTopPrompt('');
+      fetchTasks(user.id);
+      speakAura("I've updated your schedule and task list.");
+    } catch (err) {
+      console.error('Error generating plan:', err);
+      speakAura("Sorry, I encountered an issue while planning your day.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -159,7 +198,7 @@ export default function App() {
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         const transcript = event.results[0][0].transcript;
-        setPrompt(transcript);
+        setTopPrompt(transcript);
         setIsListening(false);
       };
 
@@ -237,46 +276,13 @@ export default function App() {
     localStorage.removeItem('aura_user');
     setUser(null);
     setTasks([]);
-    setPlan(null);
-  };
-
-  const handleGeneratePlan = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!prompt || !user) return;
-    setLoading(true);
-    try {
-      const res = await axios.post(`${API_BASE}/agent/plan`, {
-        userId: user.id,
-        prompt,
-      });
-
-      let parsed = res.data.plan;
-      if (typeof parsed === 'string') {
-        try {
-          parsed = JSON.parse(parsed);
-        } catch {
-          parsed = { summary: parsed, schedule: [] };
-        }
-      }
-      setPlan(parsed);
-      fetchTasks(user.id);
-
-      if (parsed?.summary) {
-        speakAura(`Here is your plan: ${parsed.summary}`);
-      } else {
-        speakAura("I've updated your schedule and task list.");
-      }
-    } catch (err) {
-      console.error(err);
-      speakAura("Sorry, I encountered an issue while planning your day.");
-    } finally {
-      setLoading(false);
-    }
+    setScheduleItems([]);
   };
 
   const getPriorityBadge = (priority?: string) => {
     switch (priority?.toLowerCase()) {
       case 'high':
+      case 'urgent':
         return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
       case 'medium':
         return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
@@ -460,8 +466,8 @@ export default function App() {
               <div className="relative flex-1">
                 <input
                   type="text"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  value={topPrompt}
+                  onChange={(e) => setTopPrompt(e.target.value)}
                   placeholder="Ask Aura to plan your day or tap the mic..."
                   className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pr-12 pl-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
                 />
@@ -508,40 +514,31 @@ export default function App() {
               Generated Schedule
             </h2>
 
-            {plan ? (
-              <div className="space-y-6 flex-1">
-                <div className="p-4 bg-indigo-950/30 border border-indigo-500/20 rounded-xl text-sm text-slate-300">
-                  <span className="font-semibold text-indigo-300">Summary: </span>
-                  {plan.summary}
+            <div className="generated-schedule-box flex-1">
+              {scheduleItems.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center py-12 text-center text-slate-500 border border-dashed border-slate-800 rounded-xl">
+                  <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
+                  <p className="text-sm">Speak or type a command for Aura to generate your schedule.</p>
                 </div>
-
-                {plan.schedule && plan.schedule.length > 0 ? (
-                  <div className="space-y-3">
-                    {plan.schedule.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between bg-slate-950/50 border border-slate-800/60 rounded-xl p-3.5 text-sm hover:border-slate-700 transition-all"
-                      >
-                        <div className="space-y-1">
-                          <p className="font-medium text-slate-200">{item.task}</p>
-                          <p className="text-xs text-slate-500">{item.time}</p>
-                        </div>
-                        <span className={`text-xs px-2.5 py-1 rounded-md border font-medium uppercase tracking-wider ${getPriorityBadge(item.priority)}`}>
-                          {item.priority || 'normal'}
-                        </span>
+              ) : (
+                <ul className="space-y-3 p-0 m-0 list-none">
+                  {scheduleItems.map((item) => (
+                    <li
+                      key={item.id}
+                      className="bg-slate-950/50 border border-slate-800/60 rounded-xl p-3.5 text-sm flex items-center justify-between hover:border-slate-700 transition-all"
+                    >
+                      <div className="space-y-1">
+                        <strong className="text-indigo-300 font-semibold">{item.timeSlot}</strong>
+                        <span className="text-slate-300"> - {item.title}</span>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-500 italic">No scheduled time blocks returned.</p>
-                )}
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center py-12 text-center text-slate-500 border border-dashed border-slate-800 rounded-xl">
-                <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
-                <p className="text-sm">Speak or type a command for Aura to generate your schedule.</p>
-              </div>
-            )}
+                      <span className={`text-xs px-2.5 py-1 rounded-md border font-medium uppercase tracking-wider ${getPriorityBadge(item.priority)}`}>
+                        {item.priority}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </section>
 
           <section className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 flex flex-col">
@@ -555,6 +552,24 @@ export default function App() {
               </span>
             </div>
 
+            <form onSubmit={handleAuraPrompt} className="flex gap-2 mb-3 bg-indigo-950/40 border border-indigo-500/20 p-3 rounded-xl">
+              <input
+                type="text"
+                placeholder="Ask Aura (e.g., 'Study Unit 4 notes urgent')"
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                className="flex-1 bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
+              />
+              <button
+                type="submit"
+                disabled={isAiLoading}
+                className="bg-purple-600 hover:bg-purple-500 disabled:bg-purple-800/50 text-white px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-1 text-sm font-medium shadow-md shadow-purple-600/20 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+              >
+                <Sparkles className="w-4 h-4" />
+                {isAiLoading ? 'Aura thinking...' : 'Ask Aura'}
+              </button>
+            </form>
+
             <form onSubmit={handleAddTask} className="flex gap-2 mb-4">
               <input
                 type="text"
@@ -565,7 +580,7 @@ export default function App() {
               />
               <button
                 type="submit"
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-1 text-sm font-medium shadow-md shadow-indigo-600/20"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-1 text-sm font-medium shadow-md shadow-indigo-600/20 shrink-0 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 Add
@@ -596,7 +611,7 @@ export default function App() {
                     <div className="flex items-center gap-3 space-y-1">
                       <button
                         onClick={() => handleToggleTask(task._id)}
-                        className="text-slate-500 hover:text-emerald-400 transition-colors"
+                        className="text-slate-500 hover:text-emerald-400 transition-colors cursor-pointer"
                         title={task.completed ? "Mark incomplete" : "Mark completed"}
                       >
                         {task.completed ? (
@@ -620,7 +635,7 @@ export default function App() {
                       </span>
                       <button
                         onClick={() => handleDeleteTask(task._id)}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer"
                         title="Delete task"
                       >
                         <Trash2 className="w-4 h-4" />

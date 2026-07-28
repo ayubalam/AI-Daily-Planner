@@ -1,25 +1,46 @@
-import { agentExecutor } from '../agent/plannerAgent.js';
+import Task from '../models/Task.js';
 
-export const generatePlan = async (req, res) => {
+export const parseAndCreateTask = async (req, res) => {
   try {
     const { prompt, userId } = req.body;
+    if (!prompt || !userId) return res.status(400).json({ message: 'Prompt and userId are required' });
 
-    const result = await agentExecutor.invoke({
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an AI planner. Use available tools to fetch existing user tasks or create new ones before providing the final schedule.',
-        },
-        {
-          role: 'user',
-          content: `User ID: ${userId}. Prompt: ${prompt}`,
-        },
-      ],
+    const lowerPrompt = prompt.toLowerCase();
+    let priority = 'medium';
+    if (lowerPrompt.includes('high') || lowerPrompt.includes('urgent') || lowerPrompt.includes('important')) {
+      priority = 'high';
+    } else if (lowerPrompt.includes('low')) {
+      priority = 'low';
+    }
+
+    const cleanTitle = prompt
+      .replace(/(with|priority|high|medium|low|urgent)/gi, '')
+      .trim();
+
+    const task = new Task({
+      userId,
+      title: cleanTitle || prompt,
+      priority,
+      completed: false,
     });
 
-    const finalResponse = result.messages[result.messages.length - 1].content;
-    res.status(200).json({ plan: finalResponse });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    await task.save();
+
+    // Return schedule info for the schedule view
+    const now = new Date();
+    const timeSlot = `${now.getHours()}:00 - ${now.getHours() + 2}:00`;
+
+    res.status(201).json({
+      message: 'Plan generated successfully',
+      task,
+      scheduleItem: {
+        id: task._id,
+        timeSlot,
+        title: task.title,
+        priority: task.priority,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Error processing AI schedule request' });
   }
 };
