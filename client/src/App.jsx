@@ -1,33 +1,18 @@
 import { useState, useEffect } from 'react';
-import type { FormEvent } from 'react';
 import axios from 'axios';
 
 const API_BASE = 'http://localhost:5000/api';
 const USER_ID = 'user123';
 
-interface TaskItem {
-  _id: string;
-  title: string;
-  duration?: number;
-  priority?: string;
-}
-
-interface ScheduleItem {
-  time: string;
-  task: string;
-  priority?: string;
-}
-
-interface PlanData {
-  summary: string;
-  schedule: ScheduleItem[];
-}
-
 export default function App() {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
-  const [plan, setPlan] = useState<PlanData | null>(null);
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [plan, setPlan] = useState(null);
+  const [tasks, setTasks] = useState([]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
 
   const fetchTasks = async () => {
     try {
@@ -38,20 +23,7 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    let isMounted = true;
-    axios.get(`${API_BASE}/tasks/${USER_ID}`)
-      .then((res) => {
-        if (isMounted) setTasks(res.data);
-      })
-      .catch((err) => console.error(err));
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const handleGeneratePlan = async (e: FormEvent) => {
+  const handleGeneratePlan = async (e) => {
     e.preventDefault();
     if (!prompt) return;
     setLoading(true);
@@ -78,7 +50,7 @@ export default function App() {
     }
   };
 
-  const handleDeleteTask = async (id: string) => {
+  const handleDeleteTask = async (id) => {
     await axios.delete(`${API_BASE}/tasks/${id}`);
     fetchTasks();
   };

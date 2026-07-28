@@ -11,8 +11,4 @@ app.use(express.json());
 app.use('/api/tasks', taskRoutes);
 app.use('/api/agent', agentRoutes);
 
-app.get('/', (req, res) => {
-  res.send('AI Daily Planner API Running...');
-});
-
 export default app;
