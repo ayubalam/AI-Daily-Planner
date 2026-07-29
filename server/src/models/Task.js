@@ -11,11 +11,18 @@ const taskSchema = new mongoose.Schema({
   },
   duration: {
     type: Number,
+    default: 30,
   },
   priority: {
     type: String,
-    enum: ['low', 'medium', 'high'],
-    default: 'medium',
+    enum: ['low', 'medium', 'high', 'urgent'],
+    default: 'low',
+  },
+  startTime: {
+    type: Date,
+  },
+  endTime: {
+    type: Date,
   },
   completed: {
     type: Boolean,
