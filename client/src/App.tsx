@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
 import { Calendar, CheckCircle2, Circle, Clock, Trash2, Sparkles, Plus, AlertCircle, Mic, MicOff, Volume2, VolumeX, LogOut, User as UserIcon, Lock, Mail } from 'lucide-react';
+import { useSpeechRecognition } from './hooks/useSpeechRecognition';
 
 const API_BASE = 'http://localhost:5000/api';
 
@@ -25,38 +26,6 @@ interface UserSession {
   username: string;
   email: string;
   token: string;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-}
-
-interface SpeechRecognitionEvent extends Event {
-  resultIndex: number;
-  results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionInstance extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
-}
-
-interface SpeechRecognitionConstructor {
-  new (): SpeechRecognitionInstance;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-  }
 }
 
 export default function App() {
@@ -88,10 +57,12 @@ export default function App() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
+  const { isListening, toggleListening, setText: setVoiceText } = useSpeechRecognition((transcript) => {
+    setTopPrompt(transcript);
+  });
 
   const fetchTasks = async (userId: string) => {
     try {
@@ -144,6 +115,7 @@ export default function App() {
       }
 
       setTopPrompt('');
+      setVoiceText('');
       fetchTasks(user.id);
       speakAura("I've updated your schedule and task list.");
     } catch (err) {
@@ -188,27 +160,6 @@ export default function App() {
     };
   }, [user?.id]);
 
-  useEffect(() => {
-    const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognitionClass) {
-      const recognition = new SpeechRecognitionClass();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const transcript = event.results[0][0].transcript;
-        setTopPrompt(transcript);
-        setIsListening(false);
-      };
-
-      recognition.onerror = () => setIsListening(false);
-      recognition.onend = () => setIsListening(false);
-
-      recognitionRef.current = recognition;
-    }
-  }, []);
-
   const speakAura = (text: string) => {
     if (!voiceEnabled || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
@@ -226,21 +177,6 @@ export default function App() {
     utterance.onerror = () => setIsSpeaking(false);
 
     window.speechSynthesis.speak(utterance);
-  };
-
-  const toggleListening = () => {
-    if (!recognitionRef.current) {
-      alert('Speech Recognition is not supported in this browser.');
-      return;
-    }
-
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } else {
-      setIsListening(true);
-      recognitionRef.current.start();
-    }
   };
 
   const handleAuthSubmit = async (e: FormEvent) => {
@@ -463,25 +399,29 @@ export default function App() {
               Ask Aura
             </label>
             <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1 }}>
                 <input
                   type="text"
+                  placeholder="Ask Aura to plan your day or tap the mic..."
                   value={topPrompt}
                   onChange={(e) => setTopPrompt(e.target.value)}
-                  placeholder="Ask Aura to plan your day or tap the mic..."
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pr-12 pl-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
+                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pr-28 pl-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
                 />
                 <button
                   type="button"
                   onClick={toggleListening}
-                  className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${
-                    isListening
-                      ? 'bg-rose-600 text-white animate-bounce'
-                      : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800'
-                  }`}
-                  title="Voice Command"
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: isListening ? '#ff4d4f' : '#fff'
+                  }}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-slate-800/50 transition-all"
                 >
                   {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  {isListening ? 'Listening...' : ''}
                 </button>
               </div>
 
