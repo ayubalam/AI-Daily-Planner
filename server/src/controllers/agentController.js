@@ -99,3 +99,43 @@ export const parseAndCreateTask = async (req, res) => {
     res.status(500).json({ message: 'Error processing AI schedule request' });
   }
 };
+
+export const getAnalyticsData = async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ message: 'userId is required' });
+
+    // Fetch all tasks for the user
+    const tasks = await Task.find({ userId });
+
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.completed);
+    const pendingTasks = tasks.filter(t => !t.completed);
+
+    // Completion Rate %
+    const completionRate = totalTasks > 0 
+      ? Math.round((completedTasks.length / totalTasks) * 100) 
+      : 0;
+
+    // Total Focus Time (Minutes spent on completed tasks)
+    const totalFocusMinutes = completedTasks.reduce((acc, t) => acc + (t.duration || 30), 0);
+
+    // Priority Breakdown
+    const priorityBreakdown = {
+      high: tasks.filter(t => t.priority === 'high' || t.priority === 'urgent').length,
+      medium: tasks.filter(t => t.priority === 'medium').length,
+      low: tasks.filter(t => t.priority === 'low').length,
+    };
+
+    res.status(200).json({
+      totalTasks,
+      completedCount: completedTasks.length,
+      pendingCount: pendingTasks.length,
+      completionRate,
+      totalFocusMinutes,
+      priorityBreakdown,
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Error fetching analytics data' });
+  }
+};
